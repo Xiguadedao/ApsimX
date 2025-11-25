@@ -77,6 +77,10 @@ namespace Models.Interfaces
         [Units("oC")]
         double Amp { get; }
 
+        /// <summary>年平均温度（Mean annual temperature）</summary>
+        [Units("oC")]
+        double MAT { get; }
+
         /// <summary>Filename</summary>
         string FileName { get; }
 

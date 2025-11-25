@@ -394,6 +394,9 @@ namespace Models.Climate
         [JsonIgnore]
         public DailyMetDataFromFile TomorrowsMetData { get ; set; }
 
+        /// <inheritdoc/>
+        public double MAT => throw new NotImplementedException();
+
         /// <summary>Invoked when the model has been created.</summary>
         public override void OnCreated()
         {

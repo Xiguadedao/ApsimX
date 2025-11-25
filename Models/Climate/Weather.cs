@@ -480,7 +480,101 @@ namespace Models.Climate
                     reader.Constant("amp").Value = value.ToString();
             }
         }
+        // 新增缓存字段、MAT 属性与计算方法（将此段放在 `Amp` 属性之后）
+        [JsonIgnore]
+        private int matYearCached = int.MinValue;
+        [JsonIgnore]
+        private double matValueCached = double.NaN;
 
+        /// <summary>
+        /// 年平均温度（MAT）。返回当年（calendar year）从气象文件计算并缓存的年平均日均温 (Maxt+Mint)/2。
+        /// 每年首次访问时计算并缓存；后续访问直接返回缓存值。
+        /// </summary>
+        [Units("°C")]
+        [JsonIgnore]
+        public double MAT
+        {
+            get
+            {
+                int year = (clock != null) ? clock.Today.Year : DateTime.Now.Year;
+                if (matYearCached != year || double.IsNaN(matValueCached))
+                {
+                    matValueCached = CalculateMATForYear(year);
+                    matYearCached = year;
+                }
+                return matValueCached;
+            }
+        }
+
+        /// <summary>
+        /// 计算指定年份的年平均温度（按文件中可用的天数计算年均）
+        /// 不改变 reader 的当前位置（保存并恢复位置）
+        /// </summary>
+        private double CalculateMATForYear(int year)
+        {
+            if (this.reader == null && !this.OpenDataFile())
+                throw new Exception($"Cannot open weather file to calculate MAT for year {year}");
+
+            long savedPosition = reader.GetCurrentPosition();
+
+            DateTime yearStart = new DateTime(year, 1, 1);
+            DateTime yearEnd = new DateTime(year, 12, 31);
+
+            // 将查询范围限制在文件的 FirstDate..LastDate 之内
+            DateTime start = (yearStart < reader.FirstDate) ? reader.FirstDate : yearStart;
+            DateTime end = (yearEnd > reader.LastDate) ? reader.LastDate : yearEnd;
+
+            if (start > end)
+            {
+                reader.SeekToPosition(savedPosition);
+                throw new Exception($"No weather data available for year {year} in file {FileName}");
+            }
+
+            try
+            {
+                reader.SeekToDate(start);
+            }
+            catch (Exception)
+            {
+                reader.SeekToPosition(savedPosition);
+                throw;
+            }
+
+            double sum = 0.0;
+            int days = 0;
+
+            while (true)
+            {
+                object[] values = reader.GetNextLineOfData();
+                DateTime curDate = reader.GetDateFromValues(values);
+                if (curDate > end)
+                    break;
+
+                double maxt = (this.maximumTemperatureIndex != -1)
+                    ? Convert.ToDouble(values[this.maximumTemperatureIndex], CultureInfo.InvariantCulture)
+                    : this.reader.ConstantAsDouble("maxt");
+
+                double mint = (this.minimumTemperatureIndex != -1)
+                    ? Convert.ToDouble(values[this.minimumTemperatureIndex], CultureInfo.InvariantCulture)
+                    : this.reader.ConstantAsDouble("mint");
+
+                sum += (maxt + mint) * 0.5;
+                days++;
+
+                if (curDate >= end)
+                    break;
+            }
+
+            reader.SeekToPosition(savedPosition);
+
+            if (days == 0)
+                throw new Exception($"No weather days found for year {year} in file {FileName}");
+
+            if (days < 365)
+                summary?.WriteMessage(this, $"Warning: MAT for year {year} calculated using {days} days (file {FileName}).", MessageType.Warning);
+
+            return sum / days;
+        }
         /// <summary>Met Data from yesterday</summary>
         [JsonIgnore]
         public DailyMetDataFromFile YesterdaysMetData { get { return GetAdjacentMetData(-1); } }
@@ -642,6 +736,9 @@ namespace Models.Climate
                 this.AirPressure = 1010;
             if (DiffuseFraction == 0)
                 this.DiffuseFraction = -1;
+            // 重置 MAT 缓存，避免跨模拟复用旧年份值
+            this.matYearCached = int.MinValue;
+            this.matValueCached = double.NaN;
 
             if (reader != null)
             {

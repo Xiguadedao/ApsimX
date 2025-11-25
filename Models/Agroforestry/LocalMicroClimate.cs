@@ -132,6 +132,9 @@ namespace Models.Agroforestry
         [JsonIgnore]
         public DailyMetDataFromFile TomorrowsMetData { get { return weather.TomorrowsMetData; } }
 
+        /// <inheritdoc/>
+        public double MAT => ((IWeather)weather).MAT;
+
         /// <summary>Gets the duration of the day in hours.</summary>
         public double CalculateDayLength(double Twilight) { return weather.CalculateDayLength(Twilight); }
 

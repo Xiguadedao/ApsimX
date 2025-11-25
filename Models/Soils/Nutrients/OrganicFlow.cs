@@ -6,6 +6,7 @@ using Models.Functions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Models.Interfaces;
 
 namespace Models.Soils.Nutrients
 {
@@ -50,6 +51,17 @@ namespace Models.Soils.Nutrients
         [Link(ByName = true, IsOptional = true)]
         private readonly ISolute labileP = null;
 
+        [Link(ByName = true, IsOptional = true)]
+        private readonly IWeather weather = null;
+
+        [Link(ByName = true, IsOptional = true)]
+        private readonly IClock clock = null;
+
+        // 1) 在现有 [Link] 字段附近（Link 列表后）添加 summary 链接：
+        [Link]
+        private ISummary summary = null;
+
+        private int cachedMatYear = int.MinValue;
 
         /// <summary>Names of destination pools</summary>
         [Description("Names of destination pools (comma separated)")]
@@ -69,6 +81,13 @@ namespace Models.Soils.Nutrients
         /// <summary>Total carbon lost to the atmosphere (kg/ha)</summary>
         public IReadOnlyList<double> Catm => catm;
 
+        private double Co2EfficiencyFromMAT(double mat)
+        {
+            if (double.IsNaN(mat)) return co2Efficiency?.Value() ?? 0.0;
+            if (mat < 1.3) return 0.0064 * mat + 0.45;
+            if (mat <= 16.5) return -0.004 * mat + 0.46;
+            return 0.025 * mat + 0.037;
+        }
 
         /// <summary>Performs the initial checks and setup</summary>
         /// <param name="numberLayers">Number of layers.</param>
@@ -80,7 +99,15 @@ namespace Models.Soils.Nutrients
             carbonFlowToDestination = new double[DestinationNames.Length];
             nitrogenFlowToDestination = new double[DestinationNames.Length];
             phosphorusFlowToDestination = new double[DestinationNames.Length];
-            co2EfficiencyValue = co2Efficiency.Value();
+            //co2EfficiencyValue = co2Efficiency.Value();
+            if (weather != null)
+            {
+                int year = (clock != null) ? clock.Today.Year : DateTime.Now.Year;
+                co2EfficiencyValue = Co2EfficiencyFromMAT(weather.MAT); // 这里把 weather.MAT 传给 mat 参数
+                cachedMatYear = year;
+            }
+            else
+                co2EfficiencyValue = co2Efficiency.Value();
         }
 
         /// <summary>Perform daily flow calculations.</summary>
@@ -95,6 +122,18 @@ namespace Models.Soils.Nutrients
                     if (destination == null)
                         throw new Exception("Cannot find destination pool with name: " + DestinationNames[i]);
                     destinations[i] = destination;
+                }
+            }
+            summary?.WriteMessage(this, $"OrganicFlow debug: weather={(weather != null)}, cachedMatYear={cachedMatYear}, MAT={(weather != null ? weather.MAT : double.NaN):F3}, co2Func={co2Efficiency?.Value():F3}, usedCo2Eff={co2EfficiencyValue:F3}", MessageType.Diagnostic);
+            // 年份变更检查：只有当年份与缓存不同时才重新用 MAT 计算 co2EfficiencyValue
+            if (weather != null)
+            {
+                int currentYear = (clock != null) ? clock.Today.Year : DateTime.Now.Year;
+                if (currentYear != cachedMatYear)
+                {
+                    double currentYearMAT = weather.MAT;
+                    co2EfficiencyValue = Co2EfficiencyFromMAT(currentYearMAT);
+                    cachedMatYear = currentYear;
                 }
             }
 

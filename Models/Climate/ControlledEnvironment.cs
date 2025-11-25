@@ -275,5 +275,8 @@ namespace Models.Climate
         /// <summary>Met Data from yesterday</summary>
         [JsonIgnore]
         public DailyMetDataFromFile TomorrowsMetData { get; set; }
+
+        /// <inheritdoc/>
+        public double MAT => throw new NotImplementedException();
     }
 }

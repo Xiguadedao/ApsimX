@@ -205,6 +205,9 @@ namespace Models.Climate
         [JsonIgnore]
         public double Amp { get; set; }
 
+        /// <inheritdoc/>
+        public double MAT => throw new NotImplementedException();
+
         /// <summary>
         /// This event will be invoked immediately before models get their weather data.
         /// models and scripts an opportunity to change the weather data before other models
